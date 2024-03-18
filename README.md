@@ -247,7 +247,6 @@ for (i in 1:num_sessions) {
       contrast_left = session_data$contrast_left[j],
       contrast_right = session_data$contrast_right[j],
       brain_area = session_data$brain_area,
-      spikes = preprocess_spikes(session_data$spks[[j]]),
       session_id = i,
       trial_id = j
     )
@@ -259,7 +258,6 @@ combined_df <- map_df(combined_data, ~{
     feedback_type = .x$feedback_type,
     contrast_left = .x$contrast_left,
     contrast_right = .x$contrast_right,
-    spikes = .x$spikes,
     brain_area = .x$brain_area,
     session_id = .x$session_id,
     trial_id = .x$trial_id,
@@ -270,33 +268,28 @@ combined_df <- combined_df %>%
 combined_df
 
 # Part 3: Predictive Model
-test_set_1 <- combined_df %>% filter(session_id == 1) %>% sample_n(100)
-test_set_18 <- combined_df %>% filter(session_id == 18) %>% sample_n(100)
-train_set <- combined_df %>% 
-  filter(!(session_id == 1 & row_number() %in% row_number(test_set_1)),
-         !(session_id == 18 & row_number() %in% row_number(test_set_18)))
-train_set <- train_set %>%
+predictive_dat <- combined_df %>% 
   mutate(feedback_type = ifelse(feedback_type == -1, 0, 1))
-test_set_1 <- test_set_1 %>%
-  mutate(feedback_type = ifelse(feedback_type == -1, 0, 1))
-test_set_18 <- test_set_18 %>%
-  mutate(feedback_type = ifelse(feedback_type == -1, 0, 1))
-# Assuming 'feedback_type' is your outcome variable and you have 'contrast_left', 'contrast_right', and 'contrast_difference' as predictors
-model <- glm(feedback_type ~ contrast_left + contrast_right + contrast_difference + spikes, 
-             family = binomial(link = 'logit'), 
-             data = train_set)
-predictions_1 <- predict(model, newdata = test_set_1, type = "response")
-predictions_1 <- ifelse(predictions_1 > 0.5, 1, 0)
-conf_matrix_1 <- table(Predicted = predictions_1, Actual = test_set_1$feedback_type)
-predictions_18 <- predict(model, newdata = test_set_18, type = "response")
-predictions_18 <- ifelse(predictions_18 > 0.5, 1, 0)
-conf_matrix_18 <- table(Predicted = predictions_18, Actual = test_set_18$feedback_type)
-accuracy_1 <- sum(diag(conf_matrix_1)) / sum(conf_matrix_1)
-accuracy_18 <- sum(diag(conf_matrix_18)) / sum(conf_matrix_18)
-print(paste("Accuracy for Session 1: ", accuracy_1))
-print(paste("Accuracy for Session 18: ", accuracy_18))
-  
-  
+predictive_dat$brain_area <- as.numeric(as.factor(predictive_dat$brain_area))
+label <- predictive_dat$feedback_type
+X <- predictive_dat %>% select(-feedback_type) %>% as.matrix()
+set.seed(123) # for reproducibility
+trainIndex <- createDataPartition(label, p = .8, list = FALSE, times = 1)
+train_df <- predictive_dat[trainIndex, ]
+test_df <- predictive_dat[-trainIndex, ]
+train_X <- X[trainIndex,]
+test_X <- X[-trainIndex,]
+train_label <- label[trainIndex]
+test_label <- label[-trainIndex]
+xgb_model <- xgboost(data = train_X, label = train_label, objective = "binary:logistic", nrounds = 10, verbose = 0)
+predictions <- predict(xgb_model, newdata = test_X)
+predicted_labels <- ifelse(predictions > 0.5, 1, 0)
+accuracy <- mean(predicted_labels == test_label)
+print(paste("Accuracy:", accuracy))
+conf_matrix <- confusionMatrix(as.factor(predicted_labels), as.factor(test_label))
+print(conf_matrix$table)
+auroc <- roc(response = as.numeric(test_label), predictor = predictions)
+print(auroc)
   
   
   
