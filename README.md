@@ -17,7 +17,7 @@ for(i in 1:18){
   session[[i]]=readRDS(paste('/Users/ryannlubeck/Downloads/Data/session',i,'.rds',sep=''))
 }
 
-#Part 1: Exploratory Data Analysis
+# Part 1: Exploratory Data Analysis
 ## Data Structure
 session_summary <- map_df(1:18, function(i) {
   num_trials <- length(session[[i]]$spks)
