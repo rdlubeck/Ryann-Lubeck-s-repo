@@ -17,7 +17,7 @@ for(i in 1:18){
   session[[i]]=readRDS(paste('/Users/ryannlubeck/Downloads/Data/session',i,'.rds',sep=''))
 }
 
-# Part 1: Exploratory Data Analysis
+# Section 2: Exploratory Data Analysis
 ## Data Structure
 session_summary <- map_df(1:18, function(i) {
   num_trials <- length(session[[i]]$spks)
@@ -225,7 +225,7 @@ success_rates_by_contrast <- data %>%
   arrange(ContrastDifference)
 print(success_rates_by_contrast)
 
-# Part 2: Data Integration
+# Section 3: Data Integration
 num_sessions <- 18
 sessions <- list()
 for (i in 1:num_sessions) {
@@ -267,7 +267,7 @@ combined_df <- combined_df %>%
   mutate(contrast_difference = contrast_left - contrast_right)
 combined_df
 
-# Part 3: Predictive Model
+# Section 4: Predictive Model
 predictive_dat <- combined_df %>% 
   mutate(feedback_type = ifelse(feedback_type == -1, 0, 1))
 predictive_dat$brain_area <- as.numeric(as.factor(predictive_dat$brain_area))
@@ -290,9 +290,64 @@ conf_matrix <- confusionMatrix(as.factor(predicted_labels), as.factor(test_label
 print(conf_matrix$table)
 auroc <- roc(response = as.numeric(test_label), predictor = predictions)
 print(auroc)
-  
-  
-  
+
+# Section 5: Prediction Performance on the Test Sets
+num_test_sessions <- 2 
+test_sessions <- list()
+for (i in 1:num_test_sessions) {
+  test_sessions[[i]] <- readRDS(paste('/Users/ryannlubeck/Downloads/tests/test', i, '.rds', sep=''))
+  test_sessions[[i]]$session_id <- rep(i, length(test_sessions[[i]]$spks))
+}
+test_combined_data <- list()
+for (i in 1:num_test_sessions) {
+  session_data <- test_sessions[[i]]
+  for (j in 1:length(session_data$spks)) {
+    trial_data <- list(
+      feedback_type = session_data$feedback_type[j],  
+      contrast_left = session_data$contrast_left[j],
+      contrast_right = session_data$contrast_right[j],
+      brain_area = session_data$brain_area,
+      session_id = i,
+      trial_id = j
+    )
+    test_combined_data[[length(test_combined_data) + 1]] <- trial_data
+  }
+}
+test_combined_df <- map_df(test_combined_data, ~{
+  tibble(
+    feedback_type = .x$feedback_type, 
+    contrast_left = .x$contrast_left,
+    contrast_right = .x$contrast_right,
+    brain_area = .x$brain_area,
+    session_id = .x$session_id,
+    trial_id = .x$trial_id,
+  )
+})
+test_combined_df <- test_combined_df %>%
+  mutate(contrast_difference = contrast_left - contrast_right)
+test_combined_df
+predictive_dat <- test_combined_df %>% 
+  mutate(feedback_type = ifelse(feedback_type == -1, 0, 1))
+predictive_dat$brain_area <- as.numeric(as.factor(predictive_dat$brain_area))
+label <- predictive_dat$feedback_type
+X <- predictive_dat %>% select(-feedback_type) %>% as.matrix()
+set.seed(123) 
+trainIndex <- createDataPartition(label, p = .8, list = FALSE, times = 1)
+train_df <- predictive_dat[trainIndex, ]
+test_df <- predictive_dat[-trainIndex, ]
+train_X <- X[trainIndex,]
+test_X <- X[-trainIndex,]
+train_label <- label[trainIndex]
+test_label <- label[-trainIndex]
+xgb_model <- xgboost(data = train_X, label = train_label, objective = "binary:logistic", nrounds = 10, verbose = 0)
+predictions <- predict(xgb_model, newdata = test_X)
+predicted_labels <- ifelse(predictions > 0.5, 1, 0)
+accuracy <- mean(predicted_labels == test_label)
+print(paste("Accuracy:", accuracy))
+conf_matrix <- confusionMatrix(as.factor(predicted_labels), as.factor(test_label))
+print(conf_matrix$table)
+auroc <- roc(response = as.numeric(test_label), predictor = predictions)
+print(auroc)
   
   
   
